@@ -24,6 +24,8 @@
 #include "client.h"
 
 #include <guacamole/client.h>
+#include <guacamole/protocol.h>
+#include <guacamole/socket.h>
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -151,6 +153,54 @@ static void streamtest_usleep(int usecs) {
 }
 
 /**
+ * Display a progress bar which indicates the current stream status.
+ *
+ * @param client
+ *     The guac_client associated with the libguac-client-streamtest
+ *     connection whose current status should be redrawn.
+ */
+static void streamtest_render_progress(guac_client* client) {
+
+    /* Get stream state from client */
+    streamtest_state* state = (streamtest_state*) client->data;
+
+    /*
+     * Render background
+     */
+
+    guac_protocol_send_rect(client->socket,
+            GUAC_DEFAULT_LAYER,
+            0, 0, STREAMTEST_PROGRESS_WIDTH, STREAMTEST_PROGRESS_HEIGHT);
+
+    guac_protocol_send_cfill(client->socket,
+            GUAC_COMP_OVER, GUAC_DEFAULT_LAYER,
+            0x40, 0x40, 0x40, 0xFF);
+
+    /*
+     * Render progress
+     */
+
+    guac_protocol_send_rect(client->socket,
+            GUAC_DEFAULT_LAYER, 0, 0,
+            (state->bytes_read+1)
+                * STREAMTEST_PROGRESS_WIDTH
+                / (state->file_size+1),
+            STREAMTEST_PROGRESS_HEIGHT);
+
+    if (state->paused)
+        guac_protocol_send_cfill(client->socket,
+                GUAC_COMP_OVER, GUAC_DEFAULT_LAYER,
+                0x80, 0x80, 0x00, 0xFF);
+    else
+        guac_protocol_send_cfill(client->socket,
+                GUAC_COMP_OVER, GUAC_DEFAULT_LAYER,
+                0x00, 0x80, 0x00, 0xFF);
+
+    guac_socket_flush(client->socket);
+
+}
+
+/**
  * Called periodically by guacd whenever the plugin should handle accumulated
  * data and render a frame.
  *
@@ -171,7 +221,15 @@ static int streamtest_client_message_handler(guac_client* client) {
     /* Record start of frame */
     frame_start = streamtest_utime();
 
-    /* STUB: Do things */
+    /* STUB: Simulate read from stream */
+    if (!state->paused) {
+        state->bytes_read += state->frame_bytes;
+        if (state->bytes_read > state->file_size)
+            state->bytes_read = state->file_size;
+    }
+
+    /* Update progress bar */
+    streamtest_render_progress(client);
 
     /* Sleep for remainder of frame */
     frame_duration = streamtest_utime() - frame_start;
@@ -237,11 +295,21 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
     /* Start with the file closed, playback not paused */
     state->fd     = -1;
     state->paused = false;
+    state->bytes_read = 0;
+    state->file_size = 1000000;
 
     /* Set client handlers and data */
     client->handle_messages = streamtest_client_message_handler;
     client->free_handler    = streamtest_client_free_handler;
     client->data = state;
+
+    /* Init display */
+    guac_protocol_send_size(client->socket, GUAC_DEFAULT_LAYER,
+            STREAMTEST_PROGRESS_WIDTH,
+            STREAMTEST_PROGRESS_HEIGHT);
+
+    /* Render initial progress bar */
+    streamtest_render_progress(client);
 
     /* Initialization complete */
     return 0;

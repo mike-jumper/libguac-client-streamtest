@@ -74,9 +74,9 @@ typedef struct streamtest_state {
     int bytes_read;
 
     /**
-     * The number of bytes remaining to be read within the file.
+     * The total number of bytes within the file.
      */
-    int bytes_remaining;
+    int file_size;
 
     /**
      * Whether playback is currently paused.
