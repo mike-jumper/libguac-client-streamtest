@@ -31,6 +31,10 @@
  * NULL-terminated array of arguments accepted by this client plugin.
  */
 const char* GUAC_CLIENT_ARGS[] = {
+    "filename",
+    "mimetype",
+    "bytes-per-frame",
+    "frame-usecs",
     NULL
 };
 
@@ -38,7 +42,37 @@ const char* GUAC_CLIENT_ARGS[] = {
  * The array index of each argument accepted by this client plugin.
  */
 enum STREAMTEST_ARGS_IDX {
+
+    /**
+     * The index of the argument containing the filename of the media file to
+     * be streamed.
+     */
+    IDX_FILENAME,
+
+    /**
+     * The index of the argument containing the mimetype of the media file to
+     * be streamed.
+     */
+    IDX_MIMETYPE,
+
+    /**
+     * The index of the argument containing the number of bytes to stream from
+     * the provided file (per frame).
+     */
+    IDX_BYTES_PER_FRAME,
+
+    /**
+     * The index of the argument containing the duration of each frame in
+     * microseconds.
+     */
+    IDX_FRAME_USECS,
+
+    /**
+     * The number of arguments that should be given to guac_client_init. If
+     * argc does not contain this value, something has gone horribly wrong.
+     */
     STREAMTEST_ARGS_COUNT
+
 };
 
 /**
