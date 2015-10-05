@@ -367,8 +367,9 @@ static int streamtest_client_message_handler(guac_client* client) {
         }
 
         /* Write all data read as blobs */
-        streamtest_write_blobs(client->socket, state->stream,
-                state->frame_buffer, length);
+        if (length > 0)
+            streamtest_write_blobs(client->socket, state->stream,
+                    state->frame_buffer, length);
 
     }
 
