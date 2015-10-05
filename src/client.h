@@ -25,6 +25,8 @@
 
 #include "config.h"
 
+#include <stdbool.h>
+
 /**
  * The width of the stream progress bar, in pixels.
  */
@@ -34,6 +36,54 @@
  * The height of the stream progress bar, in pixels.
  */
 #define STREAMTEST_PROGRESS_HEIGHT 32 
+
+/**
+ * The current playback state.
+ */
+typedef struct streamtest_state {
+
+    /**
+     * The filename of the file to be streamed.
+     */
+    char* filename;
+
+    /**
+     * The mimetype of the file being streamed.
+     */
+    char* mimetype;
+
+    /**
+     * The duration of each frame, in microseconds.
+     */
+    int frame_duration;
+
+    /**
+     * The number of bytes to stream with each frame.
+     */
+    int frame_bytes;
+
+    /**
+     * The file descriptor of the file being streamed, if the file is currently
+     * open. If no file is currently open, this will be -1.
+     */
+    int fd;
+
+    /**
+     * The number of bytes read from the file.
+     */
+    int bytes_read;
+
+    /**
+     * The number of bytes remaining to be read within the file.
+     */
+    int bytes_remaining;
+
+    /**
+     * Whether playback is currently paused.
+     */
+    bool paused;
+
+} streamtest_state;
 
 #endif
 

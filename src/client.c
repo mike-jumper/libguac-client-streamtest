@@ -25,7 +25,11 @@
 
 #include <guacamole/client.h>
 
+#include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 /**
  * NULL-terminated array of arguments accepted by this client plugin.
@@ -76,6 +80,116 @@ enum STREAMTEST_ARGS_IDX {
 };
 
 /**
+ * Handler which will be invoked when the data associated with the given
+ * guac_client needs to be freed.
+ *
+ * @param client
+ *     The guac_client whose associated data should be freed.
+ *
+ * @return
+ *     Non-zero if an error occurs while freeing data associated with the
+ *     given guac_client, zero otherwise.
+ */
+static int streamtest_client_free_handler(guac_client* client) {
+
+    /* Get stream state from client */
+    streamtest_state* state = (streamtest_state*) client->data;
+
+    /* Close file (if open) */
+    if (state->fd != -1)
+        close(state->fd);
+
+    /* Free copies of strings */
+    free(state->filename);
+    free(state->mimetype);
+
+    /* Free state itself */
+    free(state);
+
+    /* Success */
+    return 0;
+
+}
+
+/**
+ * Returns an arbitrary timestamp in microseconds. This timestamp is relative
+ * only to previous calls of streamtest_utime() and is intended only for the
+ * sake of determining relative or elapsed time.
+ *
+ * @return
+ *     An arbitrary timestamp in microseconds.
+ */
+static int streamtest_utime() {
+
+    struct timespec current;
+
+    /* Get current time */
+    clock_gettime(CLOCK_REALTIME, &current);
+    
+    /* Calculate microseconds */
+    return (int) (current.tv_sec * 1000000 + current.tv_nsec / 1000);
+
+}
+
+/**
+ * Suspends execution for the given number of microseconds.
+ *
+ * @param usecs
+ *     The number of microseconds to sleep for.
+ */
+static void streamtest_usleep(int usecs) {
+
+    /* Calculate sleep duration in seconds and nanoseconds */
+    struct timespec sleep_duration = {
+        .tv_sec  =  usecs / 1000000,
+        .tv_nsec = (usecs % 1000000) * 1000
+    };
+
+    /* Sleep for specified amount of time */
+    nanosleep(&sleep_duration, NULL);
+
+}
+
+/**
+ * Called periodically by guacd whenever the plugin should handle accumulated
+ * data and render a frame.
+ *
+ * @param client
+ *     The guac_client associated with the plugin that should render a frame.
+ *
+ * @return
+ *     Non-zero if an error occurs, zero otherwise.
+ */
+static int streamtest_client_message_handler(guac_client* client) {
+
+    /* Get stream state from client */
+    streamtest_state* state = (streamtest_state*) client->data;
+
+    int frame_start;
+    int frame_duration;
+
+    /* Record start of frame */
+    frame_start = streamtest_utime();
+
+    /* STUB: Do things */
+
+    /* Sleep for remainder of frame */
+    frame_duration = streamtest_utime() - frame_start;
+    if (frame_duration < state->frame_duration)
+        streamtest_usleep(state->frame_duration - frame_duration);
+
+    /* Warn (at debug level) if frame takes too long */
+    else
+        guac_client_log(client, GUAC_LOG_DEBUG,
+                "Frame took longer than requested duration: %i microseconds",
+                frame_duration);
+
+    /* Success */
+    return 0;
+
+}
+
+/**
  * Guacamole client plugin entry point. This function will be called by guacd
  * when the protocol associated with this plugin is selected.
  *
@@ -93,7 +207,43 @@ enum STREAMTEST_ARGS_IDX {
  */
 int guac_client_init(guac_client* client, int argc, char** argv) {
 
-    /* STUB */    
+    streamtest_state* state;
+
+    /* Validate argument count */
+    if (argc != STREAMTEST_ARGS_COUNT) {
+        guac_client_log(client, GUAC_LOG_ERROR, "Wrong number of arguments.");
+        return 1;
+    }
+
+    /* Allocate state structure */
+    state = malloc(sizeof(streamtest_state));
+
+    /* Retrieve file information */
+    state->filename = strdup(argv[IDX_FILENAME]);
+    state->mimetype = strdup(argv[IDX_MIMETYPE]);
+
+    guac_client_log(client, GUAC_LOG_DEBUG,
+            "Will stream media from \"%s\" (%s)",
+            state->filename, state->mimetype);
+
+    /* Set frame duration/size */
+    state->frame_duration = atoi(argv[IDX_FRAME_USECS]);
+    state->frame_bytes    = atoi(argv[IDX_BYTES_PER_FRAME]);
+
+    guac_client_log(client, GUAC_LOG_DEBUG,
+            "Frames will last %i microseconds and contain %i bytes",
+            state->frame_duration, state->frame_bytes);
+
+    /* Start with the file closed, playback not paused */
+    state->fd     = -1;
+    state->paused = false;
+
+    /* Set client handlers and data */
+    client->handle_messages = streamtest_client_message_handler;
+    client->free_handler    = streamtest_client_free_handler;
+    client->data = state;
+
+    /* Initialization complete */
     return 0;
 
 }
