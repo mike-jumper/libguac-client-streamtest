@@ -1,0 +1,35 @@
+{
+    "name"  : "streamtest",
+    "forms" : [
+
+        {
+            "name"  : "content",
+            "fields" : [
+                {
+                    "name"  : "filename",
+                    "type"  : "TEXT"
+                },
+                {
+                    "name"  : "mimetype",
+                    "type"  : "TEXT"
+                }
+            ]
+        },
+        
+        {
+            "name"  : "rate",
+            "fields" : [
+                {
+                    "name"  : "bytes-per-frame",
+                    "type"  : "NUMERIC"
+                },
+                {
+                    "name"  : "frame-usecs",
+                    "type"  : "NUMERIC"
+                }
+            ]
+        }
+
+    ]
+}
+

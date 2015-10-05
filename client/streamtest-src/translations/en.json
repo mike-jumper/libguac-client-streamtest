@@ -1,0 +1,15 @@
+{
+    "PROTOCOL_STREAMTEST" : {
+
+        "FIELD_HEADER_BYTES_PER_FRAME" : "Bytes per frame:",
+        "FIELD_HEADER_FILENAME"        : "File to stream:",
+        "FIELD_HEADER_FRAME_USECS"     : "Frame duration (microseconds):",
+        "FIELD_HEADER_MIMETYPE"        : "Media type of file (MIME):",
+        
+        "NAME" : "Media Streaming Test",
+
+        "SECTION_HEADER_CONTENT" : "Stream Content",
+        "SECTION_HEADER_FRAME"   : "Frame Settings"
+
+    }
+}

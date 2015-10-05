@@ -1,0 +1,13 @@
+{
+
+    "guacamoleVersion" : "*",
+
+    "name"      : "Media Streaming Test (translations)",
+    "namespace" : "streamtest",
+
+    "translations" : [
+        "translations/en.json"
+    ]
+
+}
+
