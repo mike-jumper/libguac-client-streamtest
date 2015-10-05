@@ -87,6 +87,39 @@ enum STREAMTEST_ARGS_IDX {
 };
 
 /**
+ * Handler which will be invoked when a key event is received along the socket
+ * associated with the given guac_client.
+ *
+ * @param client
+ *     The guac_client associated with the received key event.
+ *
+ * @param keysym
+ *     The X11 keysym of the key that was pressed or released.
+ *
+ * @param pressed
+ *     Non-zero of the given key was pressed, zero if the key was released.
+ *
+ * @return
+ *     Non-zero if an error occurs while handling th ekey event, zero
+ *     otherwise.
+ */
+static int streamtest_client_key_handler(guac_client* client, int keysym,
+        int pressed) {
+
+    /* Get stream state from client */
+    streamtest_state* state = (streamtest_state*) client->data;
+
+    /* Toggle paused state when space is pressed */
+    if (pressed && keysym == 0x20)
+        state->paused = !state->paused;
+
+    /* Success */
+    return 0;
+
+}
+
+
+/**
  * Handler which will be invoked when the data associated with the given
  * guac_client needs to be freed.
  *
@@ -219,7 +252,7 @@ static int streamtest_utime() {
 
     /* Get current time */
     clock_gettime(CLOCK_REALTIME, &current);
-    
+
     /* Calculate microseconds */
     return (int) (current.tv_sec * 1000000 + current.tv_nsec / 1000);
 
@@ -479,6 +512,7 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
 
     /* Set client handlers and data */
     client->handle_messages = streamtest_client_message_handler;
+    client->key_handler     = streamtest_client_key_handler;
     client->free_handler    = streamtest_client_free_handler;
     client->data = state;
 
