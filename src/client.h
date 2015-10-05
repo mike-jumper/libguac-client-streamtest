@@ -55,6 +55,12 @@ typedef struct streamtest_state {
     int frame_bytes;
 
     /**
+     * A buffer into which bytes pending streaming can be read. This buffer
+     * will be at least frame_bytes in size.
+     */
+    unsigned char* frame_buffer;
+
+    /**
      * The stream over which data from the specified file will be streamed.
      */
     guac_stream* stream;
@@ -63,11 +69,6 @@ typedef struct streamtest_state {
      * The file descriptor of the file being streamed.
      */
     int fd;
-
-    /**
-     * The number of bytes read from the file.
-     */
-    int bytes_read;
 
     /**
      * The total number of bytes within the file.

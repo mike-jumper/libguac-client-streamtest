@@ -117,6 +117,95 @@ static int streamtest_client_free_handler(guac_client* client) {
 }
 
 /**
+ * Writes the given buffer as a set of blob instructions to the given socket.
+ * The buffer will be split into as many blob instructions as necessary.
+ *
+ * @param socket
+ *     The guac_socket over which the blob instructions should be sent.
+ *
+ * @param stream
+ *     The stream to associate with each blob.
+ *
+ * @param buffer
+ *     The buffer containing the data that should be sent over the given
+ *     guac_socket as blobs.
+ *
+ * @param length
+ *     The number of bytes within the given buffer.
+ */
+static void streamtest_write_blobs(guac_socket* socket, guac_stream* stream,
+        unsigned char* buffer, int length) {
+
+    /* Flush all data in buffer as blobs */
+    while (length > 0) {
+
+        /* Determine size of blob to be written */
+        int chunk_size = length;
+        if (chunk_size > 6048)
+            chunk_size = 6048;
+
+        /* Send audio data */
+        guac_protocol_send_blob(socket, stream, buffer, chunk_size);
+
+        /* Advance to next blob */
+        buffer += chunk_size;
+        length -= chunk_size;
+
+    }
+
+}
+
+/**
+ * Attempts to fill the given buffer with bytes from the provided file
+ * descriptor, returning the number of bytes successfully read. Multiple read
+ * attempts will be made automatically until the entire buffer is full, end-of-
+ * file is encountered, or an error occurs.
+ *
+ * @param fd
+ *     The file descriptor to read data from.
+ *
+ * @param buffer
+ *     The buffer into which data should be read.
+ *
+ * @param length
+ *     The number of bytes to store within the given buffer.
+ *
+ * @return
+ *     The number of bytes read. This will ALWAYS be the size of the buffer
+ *     unless end-of-file is encountered or an error occurs. If end-of-file is
+ *     reached, zero is returned. If an error occurs, -1 is returned, and errno
+ *     is set appropriately.
+ */
+static int streamtest_fill_buffer(int fd, unsigned char* buffer, int length) {
+
+    int bytes_read = 0;
+
+    /* Continue reading until buffer is full */
+    while (length > 0) {
+
+        /* Attempt to fill remaining space in buffer */
+        int result = read(fd, buffer, length);
+
+        /* Stop if end-of-file is reached */
+        if (result == 0)
+            return bytes_read;
+
+        /* Abort on error */
+        if (result == -1)
+            return -1;
+
+        /* Advance to next block of data (if any) */
+        bytes_read += result;
+        buffer += result;
+        length -= result;
+
+    }
+
+    return bytes_read;
+
+}
+
+/**
  * Returns an arbitrary timestamp in microseconds. This timestamp is relative
  * only to previous calls of streamtest_utime() and is intended only for the
  * sake of determining relative or elapsed time.
@@ -167,6 +256,15 @@ static void streamtest_render_progress(guac_client* client) {
     /* Get stream state from client */
     streamtest_state* state = (streamtest_state*) client->data;
 
+    /* Get current position within file */
+    int position = lseek(state->fd, 0, SEEK_CUR);
+    if (position == -1) {
+        guac_client_log(client, GUAC_LOG_WARNING,
+                "Unable to determine current position in stream: %s",
+                strerror(errno));
+        return;
+    }
+
     /*
      * Render background
      */
@@ -185,9 +283,7 @@ static void streamtest_render_progress(guac_client* client) {
 
     guac_protocol_send_rect(client->socket,
             GUAC_DEFAULT_LAYER, 0, 0,
-            (state->bytes_read+1)
-                * STREAMTEST_PROGRESS_WIDTH
-                / (state->file_size+1),
+            (position+1) / ((state->file_size+1) / STREAMTEST_PROGRESS_WIDTH),
             STREAMTEST_PROGRESS_HEIGHT);
 
     if (state->paused)
@@ -198,8 +294,6 @@ static void streamtest_render_progress(guac_client* client) {
         guac_protocol_send_cfill(client->socket,
                 GUAC_COMP_OVER, GUAC_DEFAULT_LAYER,
                 0x00, 0x80, 0x00, 0xFF);
-
-    guac_socket_flush(client->socket);
 
 }
 
@@ -224,15 +318,30 @@ static int streamtest_client_message_handler(guac_client* client) {
     /* Record start of frame */
     frame_start = streamtest_utime();
 
-    /* STUB: Simulate read from stream */
+    /* Read from stream and write as blob(s) */
     if (!state->paused) {
-        state->bytes_read += state->frame_bytes;
-        if (state->bytes_read > state->file_size)
-            state->bytes_read = state->file_size;
+
+        /* Attempt to fill the available buffer space */
+        int length = streamtest_fill_buffer(state->fd,
+                state->frame_buffer, state->frame_bytes);
+
+        /* Abort connection if we cannot read */
+        if (length == -1) {
+            guac_client_log(client, GUAC_LOG_ERROR,
+                    "Unable to read from specified file: %s",
+                    strerror(errno));
+            return 1;
+        }
+
+        /* Write all data read as blobs */
+        streamtest_write_blobs(client->socket, state->stream,
+                state->frame_buffer, length);
+
     }
 
     /* Update progress bar */
     streamtest_render_progress(client);
+    guac_socket_flush(client->socket);
 
     /* Sleep for remainder of frame */
     frame_duration = streamtest_utime() - frame_start;
@@ -247,6 +356,32 @@ static int streamtest_client_message_handler(guac_client* client) {
 
     /* Success */
     return 0;
+
+}
+
+/**
+ * Returns the size of the file associated with the given file descriptor, in
+ * bytes. If an error occurs, -1 is returned, and errno is set appropriately.
+ *
+ * @param fd
+ *     The file descriptor assocaited with the file whose size should be
+ *     returned.
+ *
+ * @return
+ *     The size of the file assocaited with the given file descriptor, in
+ *     bytes, or -1 if an error occurs.
+ */
+static int streamtest_get_file_size(int fd) {
+
+    struct stat stat_buf;
+
+    /* Attempt to read file stats */
+    int result = fstat(fd, &stat_buf);
+    if (result != 0)
+        return -1;
+
+    /* Return file size only */
+    return stat_buf.st_size;
 
 }
 
@@ -268,10 +403,6 @@ static int streamtest_client_message_handler(guac_client* client) {
  */
 int guac_client_init(guac_client* client, int argc, char** argv) {
 
-    int fd;
-    guac_stream* stream;
-    streamtest_state* state;
-
     /* Validate argument count */
     if (argc != STREAMTEST_ARGS_COUNT) {
         guac_client_log(client, GUAC_LOG_ERROR, "Wrong number of arguments.");
@@ -279,7 +410,7 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
     }
 
     /* Allocate stream for media */
-    stream = guac_client_alloc_stream(client);
+    guac_stream* stream = guac_client_alloc_stream(client);
 
     /* Begin audio stream for audio mimetypes */
     if (strncmp(argv[IDX_MIMETYPE], "audio/", 6) == 0) {
@@ -308,7 +439,7 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
     }
 
     /* Attempt to open specified file, abort on error */
-    fd = open(argv[IDX_FILENAME], O_RDONLY);
+    int fd = open(argv[IDX_FILENAME], O_RDONLY);
     if (fd == -1) {
         guac_client_log(client, GUAC_LOG_ERROR,
                 "Unable to open \"%s\": %s",
@@ -316,16 +447,25 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
         return 1;
     }
 
+    int file_size = streamtest_get_file_size(fd);
+    if (file_size == -1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Unable to determine size of file \"%s\": %s",
+                argv[IDX_FILENAME], strerror(errno));
+        return 1;
+    }
+
     guac_client_log(client, GUAC_LOG_DEBUG,
-            "Successfully opened file \"%s\"",
-            argv[IDX_FILENAME]);
+            "Successfully opened file \"%s\" (%i bytes)",
+            argv[IDX_FILENAME], file_size);
 
     /* Allocate state structure */
-    state = malloc(sizeof(streamtest_state));
+    streamtest_state* state = malloc(sizeof(streamtest_state));
 
     /* Set frame duration/size */
     state->frame_duration = atoi(argv[IDX_FRAME_USECS]);
     state->frame_bytes    = atoi(argv[IDX_BYTES_PER_FRAME]);
+    state->frame_buffer   = malloc(state->frame_bytes);
 
     guac_client_log(client, GUAC_LOG_DEBUG,
             "Frames will last %i microseconds and contain %i bytes",
@@ -335,8 +475,7 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
     state->stream = stream;
     state->fd = fd;
     state->paused = false;
-    state->bytes_read = 0;
-    state->file_size = 1000000;
+    state->file_size = file_size;
 
     /* Set client handlers and data */
     client->handle_messages = streamtest_client_message_handler;
@@ -350,6 +489,7 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
 
     /* Render initial progress bar */
     streamtest_render_progress(client);
+    guac_socket_flush(client->socket);
 
     /* Initialization complete */
     return 0;
