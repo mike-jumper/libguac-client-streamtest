@@ -371,6 +371,12 @@ static int streamtest_client_message_handler(guac_client* client) {
             streamtest_write_blobs(client->socket, state->stream,
                     state->frame_buffer, length);
 
+        /* Disconnect on EOF */
+        else {
+            guac_client_log(client, GUAC_LOG_INFO, "Media streaming complete");
+            guac_client_stop(client);
+        }
+
     }
 
     /* Update progress bar */
