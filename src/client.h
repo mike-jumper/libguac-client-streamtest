@@ -25,6 +25,8 @@
 
 #include "config.h"
 
+#include <guacamole/stream.h>
+
 #include <stdbool.h>
 
 /**
@@ -43,16 +45,6 @@
 typedef struct streamtest_state {
 
     /**
-     * The filename of the file to be streamed.
-     */
-    char* filename;
-
-    /**
-     * The mimetype of the file being streamed.
-     */
-    char* mimetype;
-
-    /**
      * The duration of each frame, in microseconds.
      */
     int frame_duration;
@@ -63,8 +55,12 @@ typedef struct streamtest_state {
     int frame_bytes;
 
     /**
-     * The file descriptor of the file being streamed, if the file is currently
-     * open. If no file is currently open, this will be -1.
+     * The stream over which data from the specified file will be streamed.
+     */
+    guac_stream* stream;
+
+    /**
+     * The file descriptor of the file being streamed.
      */
     int fd;
 

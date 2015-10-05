@@ -27,11 +27,16 @@
 #include <guacamole/protocol.h>
 #include <guacamole/socket.h>
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 /**
  * NULL-terminated array of arguments accepted by this client plugin.
@@ -97,13 +102,11 @@ static int streamtest_client_free_handler(guac_client* client) {
     /* Get stream state from client */
     streamtest_state* state = (streamtest_state*) client->data;
 
-    /* Close file (if open) */
-    if (state->fd != -1)
-        close(state->fd);
+    /* Close file being streamed */
+    close(state->fd);
 
-    /* Free copies of strings */
-    free(state->filename);
-    free(state->mimetype);
+    /* Free stream */
+    guac_client_free_stream(client, state->stream);
 
     /* Free state itself */
     free(state);
@@ -265,6 +268,8 @@ static int streamtest_client_message_handler(guac_client* client) {
  */
 int guac_client_init(guac_client* client, int argc, char** argv) {
 
+    int fd;
+    guac_stream* stream;
     streamtest_state* state;
 
     /* Validate argument count */
@@ -273,16 +278,50 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
         return 1;
     }
 
-    /* Allocate state structure */
-    state = malloc(sizeof(streamtest_state));
+    /* Allocate stream for media */
+    stream = guac_client_alloc_stream(client);
 
-    /* Retrieve file information */
-    state->filename = strdup(argv[IDX_FILENAME]);
-    state->mimetype = strdup(argv[IDX_MIMETYPE]);
+    /* Begin audio stream for audio mimetypes */
+    if (strncmp(argv[IDX_MIMETYPE], "audio/", 6) == 0) {
+        guac_protocol_send_audio(client->socket, stream, argv[IDX_MIMETYPE]);
+        guac_client_log(client, GUAC_LOG_DEBUG,
+                "Recognized type \"%s\" as audio",
+                argv[IDX_MIMETYPE]);
+    }
+
+    /* Begin video stream for video mimetypes */
+#if 0
+    else if (strncmp(argv[IDX_MIMETYPE], "video/", 6) == 0) {
+        guac_protocol_send_video(client->socket, stream, argv[IDX_MIMETYPE]);
+        guac_client_log(client, GUAC_LOG_DEBUG,
+                "Recognized type \"%s\" as video",
+                argv[IDX_MIMETYPE]);
+    }
+#endif
+
+    /* Abort if type cannot be recognized */
+    else {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Invalid media type \"%s\" (not audio nor video)",
+                argv[IDX_MIMETYPE]);
+        return 1;
+    }
+
+    /* Attempt to open specified file, abort on error */
+    fd = open(argv[IDX_FILENAME], O_RDONLY);
+    if (fd == -1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Unable to open \"%s\": %s",
+                argv[IDX_FILENAME], strerror(errno));
+        return 1;
+    }
 
     guac_client_log(client, GUAC_LOG_DEBUG,
-            "Will stream media from \"%s\" (%s)",
-            state->filename, state->mimetype);
+            "Successfully opened file \"%s\"",
+            argv[IDX_FILENAME]);
+
+    /* Allocate state structure */
+    state = malloc(sizeof(streamtest_state));
 
     /* Set frame duration/size */
     state->frame_duration = atoi(argv[IDX_FRAME_USECS]);
@@ -293,7 +332,8 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
             state->frame_duration, state->frame_bytes);
 
     /* Start with the file closed, playback not paused */
-    state->fd     = -1;
+    state->stream = stream;
+    state->fd = fd;
     state->paused = false;
     state->bytes_read = 0;
     state->file_size = 1000000;
