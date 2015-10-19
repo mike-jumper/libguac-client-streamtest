@@ -27,6 +27,7 @@
 #include <guacamole/protocol.h>
 #include <guacamole/socket.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -289,6 +290,10 @@ static void streamtest_render_progress(guac_client* client) {
     /* Get stream state from client */
     streamtest_state* state = (streamtest_state*) client->data;
 
+    /* Only render progress bar for audio streams */
+    if (state->mode != STREAMTEST_AUDIO)
+        return;
+
     /* Get current position within file */
     int position = lseek(state->fd, 0, SEEK_CUR);
     if (position == -1) {
@@ -450,25 +455,22 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
     }
 
     /* Allocate stream for media */
+    streamtest_playback_mode mode;
     guac_stream* stream = guac_client_alloc_stream(client);
 
-    /* Begin audio stream for audio mimetypes */
+    /* Determine playback mode from mimetype */
     if (strncmp(argv[IDX_MIMETYPE], "audio/", 6) == 0) {
-        guac_protocol_send_audio(client->socket, stream, argv[IDX_MIMETYPE]);
+        mode = STREAMTEST_AUDIO;
         guac_client_log(client, GUAC_LOG_DEBUG,
                 "Recognized type \"%s\" as audio",
                 argv[IDX_MIMETYPE]);
     }
-
-    /* Begin video stream for video mimetypes */
-#if 0
     else if (strncmp(argv[IDX_MIMETYPE], "video/", 6) == 0) {
-        guac_protocol_send_video(client->socket, stream, argv[IDX_MIMETYPE]);
+        mode = STREAMTEST_VIDEO;
         guac_client_log(client, GUAC_LOG_DEBUG,
                 "Recognized type \"%s\" as video",
                 argv[IDX_MIMETYPE]);
     }
-#endif
 
     /* Abort if type cannot be recognized */
     else {
@@ -476,6 +478,41 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
                 "Invalid media type \"%s\" (not audio nor video)",
                 argv[IDX_MIMETYPE]);
         return 1;
+    }
+
+    /* Initialize streaming depending on playback mode */
+    switch (mode) {
+
+        /* Set up progress bar for audio streams */
+        case STREAMTEST_AUDIO:
+
+            /* Begin audio stream */
+            guac_protocol_send_audio(client->socket, stream,
+                    argv[IDX_MIMETYPE]);
+
+            /* Init display */
+            guac_protocol_send_size(client->socket, GUAC_DEFAULT_LAYER,
+                    STREAMTEST_PROGRESS_WIDTH,
+                    STREAMTEST_PROGRESS_HEIGHT);
+            break;
+
+        /* Set up generic video area for video streams */
+        case STREAMTEST_VIDEO:
+
+            /* Begin video stream */
+            guac_protocol_send_video(client->socket, stream,
+                    GUAC_DEFAULT_LAYER, argv[IDX_MIMETYPE]);
+
+            /* Init display */
+            guac_protocol_send_size(client->socket, GUAC_DEFAULT_LAYER,
+                    client->info.optimal_width,
+                    client->info.optimal_height);
+            break;
+
+        /* There are no other playback modes */
+        default:
+            assert(false);
+
     }
 
     /* Attempt to open specified file, abort on error */
@@ -512,6 +549,7 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
             state->frame_duration, state->frame_bytes);
 
     /* Start with the file closed, playback not paused */
+    state->mode = mode;
     state->stream = stream;
     state->fd = fd;
     state->paused = false;
@@ -522,11 +560,6 @@ int guac_client_init(guac_client* client, int argc, char** argv) {
     client->key_handler     = streamtest_client_key_handler;
     client->free_handler    = streamtest_client_free_handler;
     client->data = state;
-
-    /* Init display */
-    guac_protocol_send_size(client->socket, GUAC_DEFAULT_LAYER,
-            STREAMTEST_PROGRESS_WIDTH,
-            STREAMTEST_PROGRESS_HEIGHT);
 
     /* Render initial progress bar */
     streamtest_render_progress(client);

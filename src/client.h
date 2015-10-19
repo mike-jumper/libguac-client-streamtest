@@ -40,9 +40,36 @@
 #define STREAMTEST_PROGRESS_HEIGHT 32 
 
 /**
+ * The mode of playback to use. While data will be streamed identically
+ * regardless of its type, the manner of setup for the display is different.
+ * Audio streams will require a progress bar, while video streams need to use
+ * the display for their own output.
+ */
+typedef enum streamtest_playback_mode {
+
+    /**
+     * Audio is being streamed, and its current progress should be displayed as
+     * a progress bar.
+     */
+    STREAMTEST_AUDIO,
+
+    /**
+     * Video is being streamed. No progress bar should be displayed, and the
+     * Guacamole display should be used solely for video output.
+     */
+    STREAMTEST_VIDEO
+
+} streamtest_playback_mode;
+
+/**
  * The current playback state.
  */
 typedef struct streamtest_state {
+
+    /**
+     * Whether we are currently playing audio or video.
+     */
+    streamtest_playback_mode mode;
 
     /**
      * The duration of each frame, in microseconds.
